@@ -10,6 +10,11 @@
         .container { margin-top: 40px; }
         button { padding: 10px 20px; font-size: 1em; margin-top: 20px; }
     </style>
+    <!-- Load TensorFlow.js and HandPose model -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
 </head>
 <body>
     <div class="container">
@@ -25,6 +30,7 @@
         let streaming = true;
         let stream = null;
         let intervalId = null;
+        let model = null;
 
         async function startWebcam() {
             stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -32,7 +38,12 @@
             video.play();
             streaming = true;
             toggleBtn.textContent = 'Stop';
-            intervalId = setInterval(captureAndSend, 300);
+            if (!model) {
+                predictionDiv.textContent = 'Loading handpose model...';
+                model = await handpose.load();
+                predictionDiv.textContent = 'Model loaded!';
+            }
+            intervalId = setInterval(captureAndSendLandmarks, 300);
         }
 
         function stopWebcam() {
@@ -52,24 +63,25 @@
             }
         }
 
-        async function captureAndSend() {
-            if (!streaming) return;
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const dataUrl = canvas.toDataURL('image/jpeg');
-            try {
-                const response = await fetch('/predict_frame', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: dataUrl })
-                });
-                const result = await response.json();
-                predictionDiv.textContent = 'Prediction: ' + (result.prediction || '...');
-            } catch (e) {
-                predictionDiv.textContent = 'Prediction: Error';
+        async function captureAndSendLandmarks() {
+            if (!streaming || !model) return;
+            const predictions = await model.estimateHands(video, true);
+            if (predictions.length > 0) {
+                // Hand landmarks: 21 points, each with x, y, z
+                const landmarks = predictions[0].landmarks.flat();
+                try {
+                    const response = await fetch('/predict_landmarks', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ landmarks: landmarks })
+                    });
+                    const result = await response.json();
+                    predictionDiv.textContent = 'Prediction: ' + (result.prediction || '...');
+                } catch (e) {
+                    predictionDiv.textContent = 'Prediction: Error';
+                }
+            } else {
+                predictionDiv.textContent = 'Prediction: No hand detected';
             }
         }
 
