@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Real-Time Hand Sign Detection</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f4f4; text-align: center; }
+        #video { border: 2px solid #333; border-radius: 8px; margin-top: 20px; }
+        #prediction { font-size: 2em; margin-top: 20px; color: #007bff; }
+        .container { margin-top: 40px; }
+        button { padding: 10px 20px; font-size: 1em; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Real-Time Hand Sign Detection</h1>
+        <video id="video" width="480" height="360" autoplay></video>
+        <div id="prediction">Prediction: ...</div>
+        <button onclick="toggleStream()" id="toggleBtn">Stop</button>
+    </div>
+    <script>
+        const video = document.getElementById('video');
+        const predictionDiv = document.getElementById('prediction');
+        const toggleBtn = document.getElementById('toggleBtn');
+        let streaming = true;
+        let stream = null;
+        let intervalId = null;
+
+        async function startWebcam() {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = stream;
+            video.play();
+            streaming = true;
+            toggleBtn.textContent = 'Stop';
+            intervalId = setInterval(captureAndSend, 300);
+        }
+
+        function stopWebcam() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            streaming = false;
+            toggleBtn.textContent = 'Start';
+            clearInterval(intervalId);
+        }
+
+        function toggleStream() {
+            if (streaming) {
+                stopWebcam();
+            } else {
+                startWebcam();
+            }
+        }
+
+        async function captureAndSend() {
+            if (!streaming) return;
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/jpeg');
+            try {
+                const response = await fetch('/predict_frame', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: dataUrl })
+                });
+                const result = await response.json();
+                predictionDiv.textContent = 'Prediction: ' + (result.prediction || '...');
+            } catch (e) {
+                predictionDiv.textContent = 'Prediction: Error';
+            }
+        }
+
+        window.onload = startWebcam;
+    </script>
+</body>
+</html> 
